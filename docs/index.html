@@ -1,12 +1,394 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Thermogravimetric Curve Explorer</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Thermogravimetric Curve Explorer</title>
+  <script src="https://cdn.jsdelivr.net/npm/plotly.js@2.26.0/dist/plotly.min.js"></script>
+  <style>
+    body { font-family: system-ui, Arial, sans-serif; margin:0; padding:20px; background:#f5f7fa; color:#222; }
+    h1 { margin:0 0 18px; font-size:1.5rem; letter-spacing:.5px; }
+    .layout { display:grid; grid-template-columns:280px 1fr; gap:20px; }
+    @media (max-width:900px){ .layout { grid-template-columns:1fr; } }
+    .panel { background:#fff; border-radius:10px; padding:16px 18px; box-shadow:0 2px 4px rgba(0,0,0,.07); }
+    .panel h2 { margin:0 0 12px; font-size:1.05rem; text-transform:uppercase; letter-spacing:.08em; font-weight:600; color:#444; }
+    label { display:flex; justify-content:space-between; align-items:center; font-size:.75rem; font-weight:600; text-transform:none; letter-spacing:.05em; margin:14px 0 4px; }
+    .value { font-weight:600; color:#0366d6; margin-left:10px; }
+    input[type=range] { width:100%; -webkit-appearance:none; height:6px; background:linear-gradient(90deg,#cfd9e3,#e7edf3); border-radius:4px; outline:none; }
+    input[type=range]::-webkit-slider-thumb { -webkit-appearance:none; width:18px; height:18px; background:#0366d6; border-radius:50%; border:2px solid #fff; box-shadow:0 2px 4px rgba(0,0,0,.3); cursor:pointer; }
+  input[type=range]:disabled { opacity: .5; cursor: not-allowed; }
+    select, button { width:100%; padding:10px 12px; border-radius:6px; border:1px solid #ccd6e0; background:#fff; font-size:.85rem; font-weight:600; letter-spacing:.04em; cursor:pointer; }
+    select:focus, button:focus, input[type=range]:focus { outline:2px solid #0366d6; outline-offset:2px; }
+    button { background:#0366d6; color:#fff; border:none; margin-top:10px; transition:background .2s; }
+    button:hover { background:#024c9c; }
+    .plot-wrapper { position:relative; min-height:520px; }
+    #plot { width:100%; height:520px; }
+    .footer { margin-top:30px; font-size:.65rem; text-align:center; opacity:.6; }
+    .inline { display:flex; gap:10px; }
+    .inline > div { flex:1; }
+    .hint { font-size:.6rem; opacity:.7; margin-top:4px; line-height:1.2; }
+    .badges { display:flex; flex-wrap:wrap; gap:6px; margin-top:12px; }
+    .badge { background:#eef3f8; color:#333; padding:4px 8px; border-radius:14px; font-size:.6rem; font-weight:600; letter-spacing:.05em; }
+    .toggle-area { margin-top:14px; display:grid; gap:6px; }
+  .toggle-area label.switch { font-size:.65rem; font-weight:500; text-transform:none; display:flex; align-items:center; gap:8px; justify-content:flex-start; }
+    .switch input { width:auto; }
+    .loading { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:1rem; background:rgba(255,255,255,.85); backdrop-filter:blur(2px); border-radius:10px; }
+    .error { color:#b00020; font-size:.7rem; margin-top:8px; white-space:pre-wrap; }
+  </style>
 </head>
 <body>
-    <h1>Thermogravimetric Curve Explorer</h1>
-    <p>This page contains an interactive visualization of various thermogravimetric curves.</p>
+  <h1>Thermogravimetric Curve Explorer</h1>
+  <div class="layout">
+    <div class="panel" id="controls">
+      <h2>Parameters</h2>
+      <label for="ea">Activation Energy Ea (J/mol) <span class="value" id="val_ea">150000</span></label>
+      <input id="ea" type="range" min="100000" max="220000" step="1000" value="150000" />
+
+      <label for="loga">log10(A) <span class="value" id="val_loga">12.0</span></label>
+      <input id="loga" type="range" min="10" max="15" step="0.1" value="12.0" />
+      <div class="hint">A = 10^log10(A)</div>
+
+      <label for="m">Reaction Order (m) <span class="value" id="val_m">1.0</span></label>
+      <input id="m" type="range" min="0.5" max="4.0" step="0.1" value="1.0" />
+
+      <label for="npoints">Resolution (points) <span class="value" id="val_npoints">900</span></label>
+      <input id="npoints" type="range" min="200" max="5000" step="100" value="900" />
+
+      <label for="model">Model</label>
+      <select id="model">
+        <option>D2</option>
+        <option>D3</option>
+        <option>D4</option>
+        <option>R2</option>
+        <option>R3</option>
+        <option>Fn</option>
+        <option selected>JMA</option>
+        <option>SB</option>
+        <option>P1</option>
+        <option>P2</option>
+        <option>P3</option>
+        <option>P4</option>
+        <option>D1</option>
+        <option>An</option>
+        <option>RO1</option>
+        <option>RO2</option>
+        <option>RO3</option>
+        <option>Ih</option>
+      </select>
+
+      <div class="toggle-area">
+  <label class="switch"><input type="checkbox" id="show_deriv" checked /> Show derivative dα/dT</label>
+  <label class="switch"><input type="checkbox" id="show_conv" /> Show conversion α (%)</label>
+  <label class="switch"><input type="checkbox" id="dual_axes" disabled /> Dual y-axis</label>
+      </div>
+
+      <div class="badges">
+        <div class="badge" id="badge_runtime">Runtime: - ms</div>
+        <div class="badge" id="badge_complete">Complete @ Temp: -</div>
+      </div>
+      <div class="error" id="err"></div>
+      <div class="hint">Curve computed with LSODA (SciPy) via Pyodide. High resolution increases runtime.</div>
+    </div>
+    <div class="panel plot-wrapper">
+      <div id="plot"></div>
+      <div class="loading" id="loading" style="display:none;">Computing…</div>
+    </div>
+  </div>
+  <div class="footer">Interactive TG curve synthesis using kinetic ODE models. © 2025</div>
+
+  <!-- Pyodide Loader -->
+  <script src="https://cdn.jsdelivr.net/pyodide/v0.24.0/full/pyodide.js"></script>
+  <script>
+    let pyodidePromise = null;
+    const MODELS_USE_M = new Set(['RO1','RO3','SB','An','JMA','Fn']);
+
+    function updateMEnabled(){
+      const model = document.getElementById('model').value;
+      const usesM = MODELS_USE_M.has(model);
+      const mSlider = document.getElementById('m');
+      const mLabel = document.querySelector("label[for='m']");
+      mSlider.disabled = !usesM;
+      if (mLabel) mLabel.style.opacity = usesM ? '1' : '0.6';
+    }
+
+    function updateDualAxesEnabled(){
+      const showDeriv = document.getElementById('show_deriv').checked;
+      const showConv = document.getElementById('show_conv').checked;
+      const dual = document.getElementById('dual_axes');
+      const enable = showDeriv && showConv;
+      dual.disabled = !enable;
+      if (!enable) dual.checked = false;
+    }
+    async function initPy() {
+      if (!pyodidePromise) {
+        pyodidePromise = loadPyodide();
+      }
+      const pyodide = await pyodidePromise;
+      await pyodide.loadPackage(['numpy','scipy']);
+      const code = `
+import math, numpy as np
+from scipy.integrate import solve_ivp
+
+R = 8.314
+EPS = 1e-12
+
+def log_safe(x: float) -> float:
+    return math.log(x if x > EPS else EPS)
+
+def oneSpec(Ea=170000, npoints=900, A=math.exp(36), m=1.0, n=0.0, qqq=10.0, T0=0.0, TempEnd=500.0, timeStart=0.0, y0=5.00082970E-5, model="JMA"):
+    """Return Temperature[K], conversion alpha (0-1), derivative d(alpha)/dT(% per K)."""
+    Ts = 273.15 + T0
+    timeEnd = (TempEnd - T0) / (qqq / 60.0)
+    t_eval = np.linspace(start=timeStart, stop=timeEnd, num=npoints)
+
+    def event_complete(t, y, qqq_arg, Ts_arg, Ea_arg, m_arg, n_arg, A_arg, model_name):
+        return y[0] - 0.9999
+    event_complete.terminal = True
+    event_complete.direction = 1
+
+    def SB_ode(t, y, qqq_arg, Ts_arg, Ea_arg, m_arg, n_arg, A_arg, model_name):
+        y1 = y[0]
+        if y1 <= 0.0: y1 = 0.0
+        if y1 >= 1.0: return [0.0]
+        if math.isnan(y1): return [0.0]
+        Tcur = Ts_arg + t * qqq_arg / 60.0
+        coeff = math.exp(-Ea_arg / (R * Tcur))
+        one_minus = (1 - y1) if (1 - y1) > EPS else EPS
+        y_pos = y1 if y1 > EPS else EPS
+        m_pos = m_arg if m_arg > EPS else EPS
+        n_pos = n_arg if n_arg > EPS else EPS
+
+        if model_name == "RO1":
+            dydt = A_arg * coeff * (one_minus ** m_arg) * (1 + (n_arg * y1))
+        elif model_name == "RO2":
+            base = -log_safe(one_minus)
+            dydt = A_arg * coeff * n_arg * one_minus * (base ** (1 - (1 / n_pos)))
+        elif model_name == "RO3":
+            dydt = A_arg * coeff * (one_minus ** m_arg)
+        elif model_name == "SB":
+            dydt = A_arg * coeff * (y1 ** n_arg) * (one_minus ** m_arg)
+        elif model_name == "P1":
+            dydt = A_arg * coeff * 4 * (y_pos ** (3.0 / 4.0))
+        elif model_name == "P2":
+            dydt = A_arg * coeff * 3 * (y_pos ** (2.0 / 3.0))
+        elif model_name == "P3":
+            dydt = A_arg * coeff * 2 * (y_pos ** 0.5)
+        elif model_name == "P4":
+            dydt = A_arg * coeff * (2.0 / 3.0) * (y_pos ** -0.5)
+        elif model_name == "D1":
+            dydt = A_arg * coeff * 0.5 / y_pos
+        elif model_name == "An":
+            base = -log_safe(one_minus)
+            dydt = A_arg * coeff * m_arg * one_minus * (base ** ((m_arg - 1.0) / m_pos))
+        elif model_name == "D3":
+            num = (3.0 / 2.0) * (one_minus ** (2.0/3.0))
+            denom = 1.0 - (one_minus ** (1.0/3.0))
+            denom = denom if denom > EPS else EPS
+            dydt = A_arg * coeff * num / denom
+        elif model_name == "D4":
+            term = (one_minus ** (-1.0/3.0)) - 1.0
+            term = term if term > EPS else EPS
+            dydt = A_arg * coeff * (3.0 / 2.0) / term
+        elif model_name == "R3":
+            dydt = A_arg * coeff * 3.0 * (one_minus ** (2.0/3.0))
+        elif model_name == "R2":
+            dydt = A_arg * coeff * 2.0 * (one_minus ** 0.5)
+        elif model_name == "D2":
+            denom = log_safe(one_minus)
+            dydt = A_arg * coeff * -1.0 / denom
+        elif model_name == "JMA":
+            base = -log_safe(one_minus)
+            dydt = A_arg * coeff * m_arg * one_minus * (base ** (1.0 - (1.0 / m_pos)))
+        elif model_name == "Ih":
+            dydt = A_arg * coeff * y1 * one_minus
+        elif model_name == "Fn":
+            dydt = A_arg * coeff * (one_minus ** m_arg)
+        else:
+            dydt = 0.0
+        if not math.isfinite(dydt): dydt = 0.0
+        return [dydt]
+
+    try:
+        sol = solve_ivp(fun=SB_ode, t_span=[timeStart, timeEnd], y0=[y0], method='LSODA', t_eval=t_eval,
+                        args=(qqq, Ts, Ea, m, n, A, model), rtol=1e-6, atol=1e-9,
+                        max_step=(timeEnd - timeStart) / npoints * 20, events=event_complete)
+        yt = sol.y[0]
+    except Exception:
+        yt = np.zeros_like(t_eval)
+
+    # Clamp conversion
+    yt = np.clip(yt, 0.0, 1.0)
+    temp_arr = Ts + t_eval * qqq / 60.0  # full temperature grid (length npoints)
+
+    # If integration terminated early (event), pad remaining points with 1.0 so derivative becomes zero thereafter
+    if yt.shape[0] < npoints:
+        if np.any(yt >= 0.9999):
+            pad_val = 1.0
+        else:
+            pad_val = yt[-1] if yt.size else 0.0
+        yt = np.concatenate([yt, np.full(npoints - yt.shape[0], pad_val)])
+
+    # Force tail to 1.0 after first completion index
+    complete_mask = yt >= 0.9999
+    if np.any(complete_mask):
+        first_complete = int(np.argmax(complete_mask))
+        yt[first_complete:] = 1.0
+        complete_temp = temp_arr[first_complete]
+    else:
+        complete_temp = float(temp_arr[-1])
+
+    # Derivative: use diff with prepend so length matches, will be zero after plateau
+    if npoints > 1:
+        step = temp_arr[1] - temp_arr[0]
+    else:
+        step = 1.0
+    nyt = yt * 100.0
+    dadT = np.diff(nyt, prepend=nyt[0]) / step
+    dadT = np.nan_to_num(dadT, nan=0.0, posinf=0.0, neginf=0.0)
+    return temp_arr, yt, dadT, complete_temp
+`;
+      await pyodide.runPythonAsync(code);
+      return pyodide;
+    }
+
+    function formatNum(x, digits=2){ return Number(x).toFixed(digits); }
+
+    async function computeCurve(){
+      // Update m slider enabled/disabled state based on selected model
+      updateMEnabled();
+      // Dual axes only makes sense if both traces are visible
+      updateDualAxesEnabled();
+      const errEl = document.getElementById('err');
+      errEl.textContent = '';
+      const loading = document.getElementById('loading');
+      loading.style.display = 'flex';
+      const t0 = performance.now();
+      try {
+        const py = await initPy();
+        const Ea = parseFloat(document.getElementById('ea').value);
+        const logA = parseFloat(document.getElementById('loga').value);
+        const A = Math.pow(10, logA); // convert
+        const m = parseFloat(document.getElementById('m').value);
+        const npoints = parseInt(document.getElementById('npoints').value, 10);
+        const model = document.getElementById('model').value;
+  const showDeriv = document.getElementById('show_deriv').checked;
+  const showConv = document.getElementById('show_conv').checked;
+  const dualAxes = document.getElementById('dual_axes').checked && showDeriv && showConv;
+
+        // Update displayed slider values
+        document.getElementById('val_ea').textContent = Ea;
+        document.getElementById('val_loga').textContent = logA.toFixed(1);
+        document.getElementById('val_m').textContent = m.toFixed(1);
+        document.getElementById('val_npoints').textContent = npoints;
+
+        const oneSpec = py.globals.get('oneSpec');
+        const result = oneSpec(Ea, npoints, A, m, 0.0, 10.0, 0.0, 500.0, 0.0, 5.00082970E-5, model);
+        // result: (temp_arr, yt, dadT, complete_temp)
+        const tempArr = result.get(0).toJs();
+        const yt = result.get(1).toJs();
+        const dadT = result.get(2).toJs();
+        const completeTemp = result.get(3);
+
+  const CONV_COLOR = '#0366d6';
+  const DERIV_COLOR = '#d63384';
+  const traces = [];
+        if (showConv){
+          traces.push({
+            x: tempArr,
+            y: yt.map(v => v*100),
+            mode:'lines',
+            name:'Conversion α (%)',
+            line:{width:2,color:CONV_COLOR},
+            hovertemplate: '%{fullData.name} : %{y:.2f} %<extra></extra>',
+            yaxis: 'y'
+          });
+        }
+        if (showDeriv){
+          traces.push({
+            x: tempArr,
+            y: dadT,
+            mode:'lines',
+            name:'dα/dT (% per K)',
+            line:{width:2,color:DERIV_COLOR},
+            hovertemplate: '%{fullData.name} : %{y:.2f} %/K<extra></extra>',
+            yaxis: dualAxes ? 'y2' : 'y'
+          });
+        }
+        // Layout: single-axis (default) vs dual-axes with tinted gridlines
+        let layout;
+        if (dualAxes){
+          layout = {
+            margin:{l:55,r:55,t:10,b:45},
+            hovermode:'x unified',
+            hoverlabel:{namelength:-1},
+            xaxis:{title:'Temperature (K)',showgrid:true,gridcolor:'rgba(0,0,0,0.06)',hoverformat:'.2f'},
+            yaxis:{
+              title:'Conversion (%)',
+              showgrid:true,
+              gridcolor:'rgba(3,102,214,0.15)',
+              tickfont:{color:CONV_COLOR},
+              titlefont:{color:CONV_COLOR}
+            },
+            yaxis2:{
+              title:'dα/dT (% per K)',
+              overlaying:'y',
+              side:'right',
+              showgrid:true,
+              gridcolor:'rgba(214,51,132,0.15)',
+              tickfont:{color:DERIV_COLOR},
+              titlefont:{color:DERIV_COLOR}
+            }
+          };
+        } else {
+          // Single unified y-axis. Dynamic title depending on what is shown.
+          let yTitle;
+          if (showConv && showDeriv){
+            yTitle = 'Conversion (%) and dα/dT (% per K)';
+          } else if (showConv){
+            yTitle = 'Conversion (%)';
+          } else if (showDeriv){
+            yTitle = 'dα/dT (% per K)';
+          } else {
+            yTitle = 'Value';
+          }
+          layout = {
+            margin:{l:55,r:20,t:10,b:45},
+            hovermode:'x unified',
+            hoverlabel:{namelength:-1},
+            xaxis:{title:'Temperature (K)',showgrid:true,gridcolor:'rgba(0,0,0,0.06)',hoverformat:'.2f'},
+            yaxis:{title:yTitle,showgrid:true,gridcolor:'rgba(0,0,0,0.06)'}
+          };
+        }
+
+        Plotly.newPlot('plot', traces, layout, {responsive:true});
+        const dt = performance.now() - t0;
+        document.getElementById('badge_runtime').textContent = `Runtime: ${formatNum(dt,1)} ms`;
+        document.getElementById('badge_complete').textContent = `Complete @ Temp: ${formatNum(completeTemp,1)} K`;
+      } catch(e){
+        console.error(e);
+        errEl.textContent = e.message || String(e);
+      } finally {
+        loading.style.display = 'none';
+      }
+    }
+
+    // Initial compute after load (button removed; rely on input listeners and initial call)
+    // Live update on sliders (debounced)
+    let sliderTimer = null;
+    ['ea','loga','m','npoints','model','show_deriv','show_conv','dual_axes'].forEach(id => {
+      document.getElementById(id).addEventListener('input', () => {
+        if (sliderTimer) clearTimeout(sliderTimer);
+        sliderTimer = setTimeout(computeCurve, 250);
+      });
+    });
+
+    // Keep m slider state in sync with selected model
+    document.getElementById('model').addEventListener('input', updateMEnabled);
+
+    // Kick off first computation and initialize m enable state and dual axes toggle
+    updateMEnabled();
+    updateDualAxesEnabled();
+    computeCurve();
+  </script>
 </body>
 </html>
