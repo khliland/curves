@@ -1,0 +1,2 @@
+# curves
+Thermogravimetric Curve Explorer
