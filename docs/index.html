@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Thermogravimetric Curve Explorer</title>
+  <title>Curve Explorer</title>
   <script src="https://cdn.jsdelivr.net/npm/plotly.js@2.26.0/dist/plotly.min.js"></script>
   <style>
     body { font-family: system-ui, Arial, sans-serif; margin:0; padding:20px; background:#f5f7fa; color:#222; }
@@ -37,7 +37,7 @@
   </style>
 </head>
 <body>
-  <h1>Thermogravimetric Curve Explorer</h1>
+  <h1>Curve Explorer</h1>
   <div class="layout">
     <div class="panel" id="controls">
       <h2>Parameters</h2>
@@ -48,8 +48,16 @@
       <input id="loga" type="range" min="10" max="15" step="0.1" value="12.0" />
       <div class="hint">A = 10^log10(A)</div>
 
-      <label for="m">Reaction Order (m) <span class="value" id="val_m">1.0</span></label>
+
+      <label for="m">Parameter m <span class="value" id="val_m">1.0</span></label>
       <input id="m" type="range" min="0.5" max="4.0" step="0.1" value="1.0" />
+
+      <label for="n">Parameter n <span class="value" id="val_n">1.0</span></label>
+      <input id="n" type="range" min="0.5" max="4.0" step="0.1" value="1.0" />
+
+
+      <label for="qqq">Heating rate (K/min) <span class="value" id="val_qqq">1</span></label>
+      <input id="qqq" type="range" min="1" max="25" step="1" value="1" />
 
       <label for="npoints">Resolution (points) <span class="value" id="val_npoints">900</span></label>
       <input id="npoints" type="range" min="200" max="5000" step="100" value="900" />
@@ -62,14 +70,13 @@
         <option>R2</option>
         <option>R3</option>
         <option>Fn</option>
-        <option selected>JMA</option>
+        <option selected>An/JMA</option>
         <option>SB</option>
         <option>P1</option>
         <option>P2</option>
         <option>P3</option>
         <option>P4</option>
         <option>D1</option>
-        <option>An</option>
         <option>RO1</option>
         <option>RO2</option>
         <option>RO3</option>
@@ -100,10 +107,31 @@
   <script src="https://cdn.jsdelivr.net/pyodide/v0.24.0/full/pyodide.js"></script>
   <script>
     let pyodidePromise = null;
-    const MODELS_USE_M = new Set(['RO1','RO3','SB','An','JMA','Fn']);
+    // Explicit mapping for all models in the selector:
+    // m only: Fn, RO3
+    // n only: RO2
+    // both: RO1, SB, An/JMA
+    // neither: D2, D3, D4, R2, R3, P1, P2, P3, P4, D1, Ih
+    const MODELS_USE_M = new Set(['Fn','RO3','RO1','SB','An/JMA']);
+    const MODELS_USE_N = new Set(['RO2','RO1','SB']);
+
+    function updateParamEnabled(){
+      const model = document.getElementById('model').value;
+      const usesM = MODELS_USE_M.has(model);
+      const usesN = MODELS_USE_N.has(model);
+      const mSlider = document.getElementById('m');
+      const nSlider = document.getElementById('n');
+      const mLabel = document.querySelector("label[for='m']");
+      const nLabel = document.querySelector("label[for='n']");
+      mSlider.disabled = !usesM;
+      nSlider.disabled = !usesN;
+      if (mLabel) mLabel.style.opacity = usesM ? '1' : '0.6';
+      if (nLabel) nLabel.style.opacity = usesN ? '1' : '0.6';
+    }
 
     function updateMEnabled(){
-      const model = document.getElementById('model').value;
+      let model = document.getElementById('model').value;
+      if (model === 'An/JMA') model = 'An/JMA';
       const usesM = MODELS_USE_M.has(model);
       const mSlider = document.getElementById('m');
       const mLabel = document.querySelector("label[for='m']");
@@ -269,20 +297,26 @@ def oneSpec(Ea=170000, npoints=900, A=math.exp(36), m=1.0, n=0.0, qqq=10.0, T0=0
         const logA = parseFloat(document.getElementById('loga').value);
         const A = Math.pow(10, logA); // convert
         const m = parseFloat(document.getElementById('m').value);
+        const n = parseFloat(document.getElementById('n').value);
+        const qqq = parseInt(document.getElementById('qqq').value, 10);
         const npoints = parseInt(document.getElementById('npoints').value, 10);
-        const model = document.getElementById('model').value;
-  const showDeriv = document.getElementById('show_deriv').checked;
-  const showConv = document.getElementById('show_conv').checked;
-  const dualAxes = document.getElementById('dual_axes').checked && showDeriv && showConv;
+        let model = document.getElementById('model').value;
+        // Map An/JMA selector to JMA for Python
+        if (model === 'An/JMA') model = 'JMA';
+        const showDeriv = document.getElementById('show_deriv').checked;
+        const showConv = document.getElementById('show_conv').checked;
+        const dualAxes = document.getElementById('dual_axes').checked && showDeriv && showConv;
 
         // Update displayed slider values
         document.getElementById('val_ea').textContent = Ea;
         document.getElementById('val_loga').textContent = logA.toFixed(1);
         document.getElementById('val_m').textContent = m.toFixed(1);
+        document.getElementById('val_n').textContent = n.toFixed(1);
+        document.getElementById('val_qqq').textContent = qqq;
         document.getElementById('val_npoints').textContent = npoints;
 
         const oneSpec = py.globals.get('oneSpec');
-        const result = oneSpec(Ea, npoints, A, m, 0.0, 10.0, 0.0, 500.0, 0.0, 5.00082970E-5, model);
+        const result = oneSpec(Ea, npoints, A, m, n, qqq, 0.0, 500.0, 0.0, 5.00082970E-5, model);
         // result: (temp_arr, yt, dadT, complete_temp)
         const tempArr = result.get(0).toJs();
         const yt = result.get(1).toJs();
@@ -375,18 +409,19 @@ def oneSpec(Ea=170000, npoints=900, A=math.exp(36), m=1.0, n=0.0, qqq=10.0, T0=0
     // Initial compute after load (button removed; rely on input listeners and initial call)
     // Live update on sliders (debounced)
     let sliderTimer = null;
-    ['ea','loga','m','npoints','model','show_deriv','show_conv','dual_axes'].forEach(id => {
+    ['ea','loga','m','n','qqq','npoints','model','show_deriv','show_conv','dual_axes'].forEach(id => {
       document.getElementById(id).addEventListener('input', () => {
+        updateParamEnabled();
         if (sliderTimer) clearTimeout(sliderTimer);
         sliderTimer = setTimeout(computeCurve, 250);
       });
     });
 
     // Keep m slider state in sync with selected model
-    document.getElementById('model').addEventListener('input', updateMEnabled);
+    document.getElementById('model').addEventListener('input', updateParamEnabled);
 
     // Kick off first computation and initialize m enable state and dual axes toggle
-    updateMEnabled();
+    updateParamEnabled();
     updateDualAxesEnabled();
     computeCurve();
   </script>
